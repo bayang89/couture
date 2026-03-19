@@ -1,0 +1,129 @@
+name: Build APK Atelier Pro
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:   # Permet de lancer manuellement depuis GitHub
+
+jobs:
+  # ============================================================
+  # JOB 1 — APK DÉMO (données fictives, sans back-end)
+  # ============================================================
+  build-demo:
+    name: APK Démo (hors ligne)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Installer les dépendances
+        working-directory: flutter
+        run: flutter pub get
+
+      - name: Vérifier le code
+        working-directory: flutter
+        run: flutter analyze --no-fatal-infos
+
+      - name: Construire APK Démo
+        working-directory: flutter
+        run: |
+          flutter build apk \
+            --release \
+            --dart-define=DEMO_MODE=true \
+            --build-name=1.0.0 \
+            --build-number=${{ github.run_number }}
+
+      - name: Renommer l'APK
+        run: |
+          mv flutter/build/app/outputs/flutter-apk/app-release.apk \
+             flutter/build/app/outputs/flutter-apk/AtelierPro-demo-v1.0.${{ github.run_number }}.apk
+
+      - name: Publier l'APK Démo
+        uses: actions/upload-artifact@v4
+        with:
+          name: APK-Demo-v1.0.${{ github.run_number }}
+          path: flutter/build/app/outputs/flutter-apk/AtelierPro-demo-v1.0.${{ github.run_number }}.apk
+          retention-days: 30
+
+  # ============================================================
+  # JOB 2 — APK PRODUCTION (connecté au back-end Django)
+  # ============================================================
+  build-prod:
+    name: APK Production (API Django)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Installer les dépendances
+        working-directory: flutter
+        run: flutter pub get
+
+      - name: Construire APK Production
+        working-directory: flutter
+        env:
+          API_URL: ${{ secrets.API_URL }}   # Ex: https://votre-app.up.railway.app/api
+        run: |
+          flutter build apk \
+            --release \
+            --dart-define=DEMO_MODE=false \
+            --dart-define=API_URL=${API_URL:-https://api.atelier-pro.com/api} \
+            --build-name=1.0.0 \
+            --build-number=${{ github.run_number }}
+
+      - name: Renommer l'APK
+        run: |
+          mv flutter/build/app/outputs/flutter-apk/app-release.apk \
+             flutter/build/app/outputs/flutter-apk/AtelierPro-prod-v1.0.${{ github.run_number }}.apk
+
+      - name: Publier l'APK Production
+        uses: actions/upload-artifact@v4
+        with:
+          name: APK-Production-v1.0.${{ github.run_number }}
+          path: flutter/build/app/outputs/flutter-apk/AtelierPro-prod-v1.0.${{ github.run_number }}.apk
+          retention-days: 30
+
+  # ============================================================
+  # RÉSUMÉ — Affiche les liens de téléchargement
+  # ============================================================
+  summary:
+    name: Résumé du build
+    runs-on: ubuntu-latest
+    needs: [build-demo, build-prod]
+    if: always()
+    steps:
+      - name: Écrire le résumé
+        run: |
+          echo "## 📱 APKs générés — Build #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | Statut | Description |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|-------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Démo** | ✅ Prêt | Données fictives — fonctionne sans internet |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Production** | ✅ Prêt | Connecté à l'API Django (variable API_URL requise) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📥 Télécharger" >> $GITHUB_STEP_SUMMARY
+          echo "Aller dans **Actions → ce build → Artifacts** pour télécharger les APKs." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📲 Installer sur Android" >> $GITHUB_STEP_SUMMARY
+          echo "1. Transférer l'APK sur le téléphone (WhatsApp, email, câble USB)" >> $GITHUB_STEP_SUMMARY
+          echo "2. Ouvrir le fichier .apk sur le téléphone" >> $GITHUB_STEP_SUMMARY
+          echo "3. Activer **Installer des applications inconnues** si demandé" >> $GITHUB_STEP_SUMMARY
+          echo "4. Appuyer sur **Installer**" >> $GITHUB_STEP_SUMMARY
